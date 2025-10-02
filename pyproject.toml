@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swgoh-scraper"
+version = "0.1.0"
+description = "A Playwright scraper for SWGOH.gg GAC history"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "playwright>=1.45.0",
+    "beautifulsoup4>=4.12.3",
+    "lxml>=5.2.2",
+    "python-dateutil>=2.9.0"
+]
+
+[project.scripts]
+swgoh-scraper = "swgoh_scraper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["swgoh_scraper"]
+exclude = ["output*", "user_data*"]
