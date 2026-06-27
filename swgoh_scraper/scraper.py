@@ -14,9 +14,28 @@ from .config import BASE_HISTORY_URL, OUTPUT_DIR
 from .utils import save_json, clean_name
 
 
-def get_event_links(page):
-    page.goto(BASE_HISTORY_URL, wait_until="domcontentloaded")
-    page.wait_for_timeout(5000)
+def get_event_links(page, base_url=BASE_HISTORY_URL, challenge_timeout=60000):
+    page.goto(base_url, wait_until="domcontentloaded")
+
+    # swgoh.gg sits behind Cloudflare. A headed browser usually clears the
+    # "Just a moment..." JS challenge on its own, but it can take several
+    # seconds — wait for the real GAC history links to appear instead of a
+    # fixed sleep. If they never show, surface the challenge instead of
+    # silently scraping the block page.
+    try:
+        page.wait_for_selector(
+            "a[href*='/gac-history/O']", timeout=challenge_timeout)
+    except Exception:
+        if "just a moment" in (page.title() or "").lower():
+            raise RuntimeError(
+                "Blocked by Cloudflare challenge (\"Just a moment...\"). "
+                "Run headed (--no-headless) so the challenge can clear; the "
+                "cf_clearance cookie then persists in user_data/ for later runs."
+            )
+        raise RuntimeError(
+            f"No GAC history links found on {base_url} — page may require "
+            "login (refresh swgoh_cookies.json) or its markup changed."
+        )
 
     soup = BeautifulSoup(page.content(), "lxml")
     links = []
@@ -185,13 +204,29 @@ def scrape_round(page, event_url, round_num):
     }
 
 
-def scrape_all_events():
+def scrape_all_events(base_url=BASE_HISTORY_URL, output_dir=OUTPUT_DIR,
+                      headless=False):
     """Scrape all events and their rounds from the GAC history page."""
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir="user_data",
-            headless=False,
-            slow_mo=250
+            channel="chrome",
+            headless=headless,
+            slow_mo=250,
+            # Playwright launches Chrome with --enable-automation and sets
+            # navigator.webdriver=true; Cloudflare reads those and re-issues
+            # the Turnstile challenge in a loop even after you solve it. Drop
+            # the automation banner so a manually-solved challenge sticks.
+            ignore_default_args=["--enable-automation"],
+            # Under WSLg the GPU is blocklisted, so Chrome serves no WebGL and
+            # the challenge renders blank; force a software WebGL fallback.
+            # AutomationControlled removes the navigator.webdriver signal.
+            args=[
+                "--ignore-gpu-blocklist",
+                "--enable-unsafe-swiftshader",
+                "--use-angle=swiftshader",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
         page = context.new_page()
 
@@ -203,7 +238,7 @@ def scrape_all_events():
         except FileNotFoundError:
             print("⚠️ No swgoh_cookies.json found — you may not be logged in.")
 
-        event_links = get_event_links(page)
+        event_links = get_event_links(page, base_url)
         print(f"Found {len(event_links)} event links")
 
         all_results = []
@@ -222,14 +257,14 @@ def scrape_all_events():
                 event_id_match = re.search(r"/O(\d+)/", event_url)
                 event_id = event_id_match.group(
                     1) if event_id_match else "unknown"
-                filename = Path(OUTPUT_DIR) / \
+                filename = Path(output_dir) / \
                     f"gac_history_event_{event_id}.json"
                 save_json(event_results, filename)
                 all_results.extend(event_results)
 
         context.close()
 
-    master_file = Path(OUTPUT_DIR) / "gac_history_all.json"
+    master_file = Path(output_dir) / "gac_history_all.json"
     save_json(all_results, master_file)
     print("✅ Scraping complete! Master data saved.")
     return all_results

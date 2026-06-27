@@ -33,19 +33,31 @@ This will install the package in editable/development mode.
 
 ## Usage
 
-Run the CLI with:
+After `pip install -e .`, the `swgoh-scraper` command is available:
 
 ```bash
-python -m swgoh_scraper.cli --help
+swgoh-scraper --help
 ```
+
+Equivalently, run it as a module:
+
+```bash
+python -m swgoh_scraper --help
+```
+
+Options:
+
+- `--url` — GAC history page URL to scrape (defaults to the value in `config.py`)
+- `--output` — directory to write JSON output to (default: `output`)
 
 Example:
 
 ```bash
-python -m swgoh_scraper.cli --config config.yaml --output output.json
+swgoh-scraper --url https://swgoh.gg/p/887623583/gac-history/ --output output
 ```
 
-Adjust arguments as required based on implemented CLI options.
+A logged-in `swgoh_cookies.json` is required to access GAC history. The scraper
+launches a visible Chromium window via Playwright.
 
 ## Project Structure
 ```
