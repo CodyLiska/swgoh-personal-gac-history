@@ -60,6 +60,7 @@ Thumbs.db
 # Project-specific
 swgoh_cookies.json
 user_data/
+output/
 
 sync.ffs_db
 gac_history*
