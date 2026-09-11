@@ -1,6 +1,6 @@
 # SWGOH Scraper
 
-A Python-based command-line tool for scraping Star Wars: Galaxy of Heroes (SWGOH) data.  
+A Python-based command-line tool for scraping Star Wars: Galaxy of Heroes (SWGOH) data.
 This project is packaged as a Python module and includes a CLI for interacting with the scraper.
 
 ## Features
