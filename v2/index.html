@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#080d15"><title>GAC Archive · Command Deck</title>
+<link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar">
+<div class="brand"><div class="brand-mark"><span></span><span></span><span></span></div><div><strong>GAC ARCHIVE</strong><small>COMMAND DECK / V2</small></div></div>
+<div class="side-label">WORKSPACE</div>
+<nav class="nav" aria-label="Main navigation">
+<button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span><span>Overview</span></button>
+<button class="nav-item" data-view="history"><span class="nav-icon">▤</span><span>Battle history</span></button>
+<button class="nav-item" data-view="counters"><span class="nav-icon">⌁</span><span>Counter lab</span></button>
+<button class="nav-item" data-view="capture"><span class="nav-icon">◉</span><span>Capture data</span><span id="side-pulse" class="side-pulse" hidden></span></button>
+</nav>
+<div class="side-spacer"></div>
+<div class="sidebar-foot"><div class="sidebar-foot-top"><span class="status-dot"></span><span>LOCAL ARCHIVE</span></div><strong id="side-records">Loading…</strong><small id="side-updated">Reading captured history</small></div>
+<div class="side-version">SWGOH.GG · GRAND ARENA</div>
+</aside>
+<main class="main">
+<header class="topbar"><div class="breadcrumbs"><span>GAC ARCHIVE</span><span class="crumb-sep">/</span><strong id="page-crumb">OVERVIEW</strong></div><div class="top-actions"><span id="global-status" class="top-status"><span class="status-dot"></span> Archive ready</span><button id="refresh-btn" class="icon-button" title="Reload local history" aria-label="Reload local history">↻</button><button id="top-capture" class="button button-primary"><span>◉</span> Capture data</button></div></header>
+<div id="notice" class="notice" hidden></div>
+<div id="page" class="page"><div class="loading">Loading your GAC history…</div></div>
+<footer class="footer"><span>GAC ARCHIVE V2</span><span>LOCAL DATA · SWGOH.GG</span></footer>
+</main></div></body></html>

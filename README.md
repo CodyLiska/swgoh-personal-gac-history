@@ -20,7 +20,7 @@ It is recommended to use a virtual environment:
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
-.venv\Scripts\activate   # Windows
+.\.venv\Scripts\Activate.ps1   # Windows
 ```
 
 Install dependencies from `pyproject.toml`:
