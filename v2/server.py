@@ -12,8 +12,14 @@ import sys
 import threading
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from swgoh_scraper import mongo  # noqa: E402
+from swgoh_scraper.validate import check_roster, check_rounds  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 OUTPUT = ROOT / "output"
+ROSTER = OUTPUT / "roster.json"
+PUSH_LOCK = threading.Lock()
 UNITS = ROOT / "dashboard/public/data/units.json"
 DEFAULT_URL = "https://swgoh.gg/p/887623583/gac-history/"
 HISTORY_PATH = re.compile(r"^/p/\d+/gac-history/?$")
@@ -35,9 +41,27 @@ def history():
             latest = max(latest or 0, file.stat().st_mtime)
         except (OSError, ValueError) as exc:
             errors.append(f"{file.name}: {exc}")
+    # Same post-scrape check the CLI runs, re-run on what's on disk so the alert
+    # stays up until a clean capture replaces the bad files.
+    problems = check_rounds(rounds) if files else []
+    if ROSTER.exists():
+        try:
+            problems += [f"Roster: {p}" for p in
+                         check_roster(json.loads(ROSTER.read_text(encoding="utf-8")))]
+        except (OSError, ValueError) as exc:
+            errors.append(f"{ROSTER.name}: {exc}")
     return {"rounds": rounds, "event_files": len(files),
             "updated_at": datetime.fromtimestamp(latest, timezone.utc).isoformat() if latest else None,
-            "errors": errors}
+            "errors": errors, "problems": problems}
+
+
+def push_to_mongo():
+    db = mongo.connect()
+    try:
+        rounds, roster = mongo.push(db, OUTPUT)
+    finally:
+        db.client.close()
+    return {"ok": True, "rounds": rounds, "roster": roster, "pushed_at": now()}
 
 
 class Job:
@@ -108,7 +132,12 @@ class Job:
             code = process.wait()
             with self.lock:
                 self.state = "stopped" if self.state == "stopping" else "complete" if code == 0 else "failed"
-                self.error = f"Scraper exited with code {code}. Check the log." if code and self.state == "failed" else None
+                if self.state != "failed":
+                    self.error = None
+                elif any("Data check FAILED" in line for line in self.lines):
+                    self.error = "Data check failed: some fields came back empty. See the alert above."
+                else:
+                    self.error = f"Scraper exited with code {code}. Check the log."
                 self.finished_at, self.process = now(), None
         except Exception as exc:
             with self.lock:
@@ -163,6 +192,17 @@ class Handler(BaseHTTPRequestHandler):
         route = self.path.split("?", 1)[0]
         if route == "/api/scrape/stop":
             return self.send_json({"ok": JOB.stop(), "status": JOB.snapshot()})
+        if route == "/api/push":
+            if JOB.snapshot()["state"] in ("running", "stopping"):
+                return self.send_json({"error": "Wait for the capture to finish before pushing."}, 409)
+            if not PUSH_LOCK.acquire(blocking=False):
+                return self.send_json({"error": "A push is already running."}, 409)
+            try:
+                return self.send_json(push_to_mongo())
+            except Exception as exc:  # surface any connect/write failure to the UI
+                return self.send_json({"error": f"Push failed: {exc}"}, 502)
+            finally:
+                PUSH_LOCK.release()
         if route != "/api/scrape/start":
             return self.send_json({"error": "Unknown endpoint."}, 404)
         try:

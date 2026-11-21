@@ -3,7 +3,8 @@ const state = {
   view: 'overview', data: {rounds:[],event_files:0,errors:[]}, units:{}, battles:[],
   status:{state:'idle',lines:[]}, page:1, expanded:null, selectedEnemy:'',
   filters:{query:'',mode:'all',type:'all',outcome:'all',season:'all'},
-  counters:{query:'',mode:'all',match:'leader'}, lastStatus:'idle'
+  counters:{query:'',mode:'all',match:'leader'}, lastStatus:'idle',
+  push:{busy:false,result:null,error:null}
 };
 const fmt = new Intl.NumberFormat();
 function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -35,6 +36,9 @@ async function loadData(){
     state.data=data;state.units=units;decorate(data);
     $('#notice').hidden = !(data.errors||[]).length;
     if(data.errors.length) $('#notice').textContent='Some archive files could not be read: '+data.errors.join(' · ');
+    const problems=data.problems||[];
+    $('#data-alert').hidden=!problems.length;
+    if(problems.length) $('#data-alert').innerHTML='<strong>⚠ Missing data detected.</strong> The data check found '+problems.length+' problem'+(problems.length>1?'s':'')+'. swgoh.gg may have changed its pages, or the scrape was blocked. Run a new capture once it is fixed.<ul>'+problems.map(p=>'<li>'+esc(p)+'</li>').join('')+'</ul>';
     updateChrome();render();
   }catch(e){ showNotice('Could not read local history: '+e.message); }
 }
@@ -44,7 +48,8 @@ function updateChrome(){
   $('#side-updated').textContent=state.data.updated_at?'Updated '+date(state.data.updated_at):'No captured files yet';
   const busy=['running','stopping'].includes(state.status.state);
   $('#side-pulse').hidden=!busy;
-  $('#global-status').innerHTML='<span class="status-dot '+(busy?'busy':state.status.state==='failed'?'fail':'')+'"></span>'+esc(busy?'Capture in progress':state.status.state==='failed'?'Capture needs attention':'Archive ready');
+  const failed=state.status.state==='failed',alert=(state.data.problems||[]).length>0;
+  $('#global-status').innerHTML='<span class="status-dot '+(busy?'busy':failed||alert?'fail':'')+'"></span>'+esc(busy?'Capture in progress':failed?'Capture needs attention':alert?'Data needs attention':'Archive ready');
   $('#page-crumb').textContent=({overview:'OVERVIEW',history:'BATTLE HISTORY',counters:'COUNTER LAB',capture:'CAPTURE DATA'})[state.view];
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===state.view));
 }
@@ -127,7 +132,23 @@ function renderCapture(){
   '<div class="capture-grid"><div class="panel"><div class="panel-head"><h2>Scrape settings</h2><span class="pill">LOCAL RUN</span></div><div class="field"><label for="profile-url">GAC history URL</label><input id="profile-url" class="input" type="url" spellcheck="false" value="'+esc(localStorage.getItem('gac-v2-url')||s.url||'https://swgoh.gg/p/887623583/gac-history/')+'" '+(busy?'disabled':'')+'><div class="help">The player profile whose history you want to capture.</div></div><label class="checkbox-row"><input id="headless" type="checkbox" '+(s.headless?'checked':'')+' '+(busy?'disabled':'')+'><span>Run Chrome headless <span class="muted">(visible Chrome is recommended for Cloudflare challenges)</span></span></label><div class="capture-actions"><button class="button button-primary" data-action="start" '+(busy?'disabled':'')+'>◉ &nbsp; Start capture</button><button class="button button-danger" data-action="stop" '+(!busy?'disabled':'')+'>Stop capture</button><button class="button" data-action="reload">↻ &nbsp; Reload archive</button></div><div class="help" style="margin-top:19px">The scraper uses this project’s local Chrome profile and cookies. If swgoh.gg asks for a challenge, complete it in the Chrome window.</div></div>'+
   '<div class="panel"><div class="panel-head"><h2>Capture status</h2><span class="eyebrow">'+esc(s.state.toUpperCase())+'</span></div><div class="state-box"><span class="state-orb">◉</span><div><strong>'+esc(stateName)+'</strong><small>'+esc(desc)+'</small></div></div><div class="steps"><div class="step"><span class="step-number">1</span><div><strong>Open your history</strong><p>Reuse the local signed-in Chrome session.</p></div></div><div class="step"><span class="step-number">2</span><div><strong>Capture each event</strong><p>'+(s.event_count!==null?esc(n(s.event_count))+' events found. ':'')+'Round data is saved to the canonical output files.</p></div></div><div class="step"><span class="step-number">3</span><div><strong>Explore the archive</strong><p>The dashboard reads those files directly after completion.</p></div></div></div></div></div>'+
   '<div class="panel section-gap"><div class="panel-head"><h2>Activity log</h2><span class="sub">'+(s.started_at?'STARTED '+esc(shortDate(s.started_at)):'WAITING FOR CAPTURE')+'</span></div><div class="log" role="log" aria-live="polite">'+(lines||'<span class="muted">Scrape activity will appear here.</span>')+'</div></div>'+
-  '<div class="panel section-gap"><div class="panel-head"><h2>Local inventory</h2><span class="sub">READ FROM OUTPUT /</span></div><div class="inventory"><div><strong>'+n(state.data.event_files)+'</strong><small>EVENT FILES</small></div><div><strong>'+n(state.data.rounds.length)+'</strong><small>ROUNDS</small></div><div><strong>'+n(state.battles.length)+'</strong><small>BATTLES</small></div></div></div>';
+  '<div class="panel section-gap"><div class="panel-head"><h2>Local inventory</h2><span class="sub">READ FROM OUTPUT /</span></div><div class="inventory"><div><strong>'+n(state.data.event_files)+'</strong><small>EVENT FILES</small></div><div><strong>'+n(state.data.rounds.length)+'</strong><small>ROUNDS</small></div><div><strong>'+n(state.battles.length)+'</strong><small>BATTLES</small></div></div></div>'+
+  renderPush(busy);
+}
+function renderPush(captureBusy){
+  const p=state.push,problems=(state.data.problems||[]).length;
+  const msg=p.busy?'Pushing to MongoDB…':p.error?p.error:p.result?'Pushed '+n(p.result.rounds)+' rounds'+(p.result.roster?' and the roster':'')+' · '+new Date(p.result.pushed_at).toLocaleString():'Not pushed yet this session.';
+  return '<div class="panel section-gap"><div class="panel-head"><h2>Database</h2><span class="sub">MONGODB</span></div><div class="help">Uploads everything in output/ to MongoDB (gac_rounds and rosters). Pushing again updates rounds that are already there instead of duplicating them.</div>'+
+  (problems?'<div class="push-warn">⚠ The data check found '+n(problems)+' problem'+(problems>1?'s':'')+'. Pushing copies this data into MongoDB as it is.</div>':'')+
+  '<div class="capture-actions"><button class="button button-primary" data-action="push" '+(captureBusy||p.busy?'disabled':'')+'>⇪ &nbsp; Push to database</button></div><div class="push-status '+(p.error?'fail':'')+'" role="status">'+esc(msg)+'</div></div>';
+}
+async function push(){
+  const problems=(state.data.problems||[]).length;
+  if(problems&&!confirm('The data check found '+problems+' problem(s). Push this data to MongoDB anyway?'))return;
+  state.push={busy:true,result:null,error:null};render();
+  try{state.push={busy:false,result:await api('/api/push',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),error:null};}
+  catch(e){state.push={busy:false,result:null,error:e.message};}
+  if(state.view==='capture')render();
 }
 async function updateStatus(){
   try{
@@ -153,6 +174,7 @@ document.addEventListener('click',e=>{
   else if(action==='reload')loadData();
   else if(action==='start')start();
   else if(action==='stop')stop();
+  else if(action==='push')push();
   else if(action==='battle'){state.expanded=Number(btn.dataset.index);render();}
   else if(action==='close-detail'){state.expanded=null;render();}
   else if(action==='prev'){state.page--;render();}
