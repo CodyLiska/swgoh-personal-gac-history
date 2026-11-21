@@ -49,6 +49,7 @@ Options:
 
 - `--url` — GAC history page URL to scrape (defaults to the value in `config.py`)
 - `--output` — directory to write JSON output to (default: `output`)
+- `--roster` — capture your roster (swgoh.gg player API: units, mods, datacrons) to `output/roster.json` instead of GAC history
 
 Example:
 
@@ -56,8 +57,16 @@ Example:
 swgoh-scraper --url https://swgoh.gg/p/887623583/gac-history/ --output output
 ```
 
-A logged-in `swgoh_cookies.json` is required to access GAC history. The scraper
-launches a visible Chromium window via Playwright.
+The scraper launches your installed Google Chrome (headed) via Playwright with a
+persistent profile in `user_data/`. No cookie file is needed: the first run may
+show a Cloudflare check to solve by hand, and the `cf_clearance` cookie it earns
+stays in `user_data/` for later runs. Don't delete `user_data/`.
+`swgoh_cookies.json` is optional and only loaded if present.
+
+After every run the output is checked (`swgoh_scraper/validate.py`). If key
+fields came back empty (usually a swgoh.gg markup change or a Cloudflare block),
+it prints `❌ Data check FAILED` with the affected fields and exits with code 1.
+The output is still saved.
 
 ## Project Structure
 ```

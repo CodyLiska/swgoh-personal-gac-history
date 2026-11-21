@@ -132,23 +132,35 @@ def scrape_round(page, event_url, round_num):
     print(f"Visiting {url}")
     page.goto(url, wait_until="domcontentloaded")
     page.wait_for_timeout(5000)
+    if "just a moment" in (page.title() or "").lower():
+        raise RuntimeError("Blocked by Cloudflare challenge")
 
     soup = BeautifulSoup(page.content(), "lxml")
 
     # --- Top summary ---
-    season_block = soup.select_one("h2.mb-0")
-    season_raw = season_block.get_text(
-        " ", strip=True) if season_block else None
+    # Header panel (2026 redesign): "Season N <time>", round buttons,
+    # "Player vs Opponent", then "1,707 - 1,787". The page no longer shows
+    # the event type (5v5/3v3), so event_type stays None.
+    header = soup.select_one("div.panel.text-center.font-bold")
+    lines = header.find_all("div", class_="text-3xl", recursive=False) if header else []
+    if len(lines) < 2:
+        print(f"⚠️ Round header not found on {url} — swgoh.gg markup may have changed.")
+
+    season_raw = raw_date = matchup = None
+    if lines:
+        season_text = lines[0].find(string=True, recursive=False)
+        season_raw = season_text.strip() if season_text else None
+        date_block = lines[0].select_one("time")
+        raw_date = date_block.get_text(strip=True) if date_block else None
+    if len(lines) > 1:
+        matchup = lines[1].get_text(" ", strip=True)
 
     season_number_match = re.search(r"Season (\d+)", season_raw or "")
     season_number = int(season_number_match.group(
         1)) if season_number_match else None
 
-    event_type_match = re.search(r"\((.*?)\)", season_raw or "")
-    event_type = event_type_match.group(1) if event_type_match else None
+    event_type = None
 
-    date_block = soup.select_one("div.fs-2 span.smaller.text-muted")
-    raw_date = date_block.get_text(strip=True) if date_block else None
     try:
         iso_date = parser.parse(raw_date).isoformat()
     except Exception:
@@ -156,19 +168,10 @@ def scrape_round(page, event_url, round_num):
 
     season = f"{season_raw}, {raw_date}" if season_raw and raw_date else season_raw or raw_date
 
-    vs_block = soup.select("div.fs-2")
-    if len(vs_block) > 1:
-        parts = vs_block[1].get_text(strip=True).split("vs")
-        if len(parts) == 2:
-            matchup = f"{parts[0].strip()} vs {parts[1].strip()}"
-        else:
-            matchup = vs_block[1].get_text(strip=True)
-    else:
-        matchup = None
-
     points = None
-    points_block = soup.select_one("div.text-muted")
-    points_text = points_block.get_text(strip=True) if points_block else None
+    points_block = header.find(
+        "div", class_="text-gg-gray-300", recursive=False) if header else None
+    points_text = points_block.get_text(strip=True).replace(",", "") if points_block else None
     if points_text and "-" in points_text:
         try:
             p1, p2 = [int(p.strip()) for p in points_text.split("-")]
@@ -204,30 +207,35 @@ def scrape_round(page, event_url, round_num):
     }
 
 
+def launch_context(p, headless=False):
+    """Persistent real-Chrome context whose user_data/ banks the cf_clearance cookie."""
+    return p.chromium.launch_persistent_context(
+        user_data_dir="user_data",
+        channel="chrome",
+        headless=headless,
+        slow_mo=250,
+        # Playwright launches Chrome with --enable-automation and sets
+        # navigator.webdriver=true; Cloudflare reads those and re-issues
+        # the Turnstile challenge in a loop even after you solve it. Drop
+        # the automation banner so a manually-solved challenge sticks.
+        ignore_default_args=["--enable-automation"],
+        # Under WSLg the GPU is blocklisted, so Chrome serves no WebGL and
+        # the challenge renders blank; force a software WebGL fallback.
+        # AutomationControlled removes the navigator.webdriver signal.
+        args=[
+            "--ignore-gpu-blocklist",
+            "--enable-unsafe-swiftshader",
+            "--use-angle=swiftshader",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    )
+
+
 def scrape_all_events(base_url=BASE_HISTORY_URL, output_dir=OUTPUT_DIR,
                       headless=False):
     """Scrape all events and their rounds from the GAC history page."""
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir="user_data",
-            channel="chrome",
-            headless=headless,
-            slow_mo=250,
-            # Playwright launches Chrome with --enable-automation and sets
-            # navigator.webdriver=true; Cloudflare reads those and re-issues
-            # the Turnstile challenge in a loop even after you solve it. Drop
-            # the automation banner so a manually-solved challenge sticks.
-            ignore_default_args=["--enable-automation"],
-            # Under WSLg the GPU is blocklisted, so Chrome serves no WebGL and
-            # the challenge renders blank; force a software WebGL fallback.
-            # AutomationControlled removes the navigator.webdriver signal.
-            args=[
-                "--ignore-gpu-blocklist",
-                "--enable-unsafe-swiftshader",
-                "--use-angle=swiftshader",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
+        context = launch_context(p, headless)
         page = context.new_page()
 
         try:
