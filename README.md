@@ -68,6 +68,24 @@ fields came back empty (usually a swgoh.gg markup change or a Cloudflare block),
 it prints `❌ Data check FAILED` with the affected fields and exits with code 1.
 The output is still saved.
 
+## MongoDB
+
+`--push` loads the JSON already in `--output` into MongoDB instead of scraping.
+Put the connection in `.env` (gitignored):
+
+```
+MONGO_URI=mongodb://user:pass@<host>:27017/?authSource=admin
+MONGO_DB=swgoh   # optional, default "swgoh"
+```
+
+```bash
+swgoh-scraper --push
+```
+
+- `gac_rounds`: one doc per round from `output/gac_history_event_*.json`, upserted
+  on `_id` (`<event_id>_R<round>`), so re-pushing never duplicates.
+- `rosters`: `output/roster.json`, one doc per ally code, replaced on each push.
+
 ## Project Structure
 ```
 swgoh_scraper/

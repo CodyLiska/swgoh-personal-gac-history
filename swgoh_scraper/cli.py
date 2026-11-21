@@ -34,7 +34,18 @@ def main(argv=None):
         action="store_true",
         help="Capture your roster (output/roster.json) instead of GAC history.",
     )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Load the JSON already in --output into MongoDB (MONGO_URI in .env) "
+             "instead of scraping.",
+    )
     args = parser.parse_args(argv)
+
+    if args.push:
+        from .mongo import connect, push
+        push(connect(), args.output)
+        return
 
     if args.roster:
         data = scrape_roster(output_dir=args.output, headless=args.headless)
